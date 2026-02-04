@@ -15,6 +15,7 @@ pip install --upgrade pip
 pip install fastapi uvicorn python-multipart pydantic
 pip install langchain langchain-community chromadb
 pip install sentence-transformers duckduckgo-search requests pypdf
+pip install langchain-chroma
 
 echo.
 echo ✅ 安裝完成！

@@ -9,3 +9,4 @@ sentence-transformers==2.2.2
 duckduckgo-search==3.9.6
 requests==2.31.0
 pypdf==3.17.1
+langchain-chroma
