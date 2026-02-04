@@ -35,10 +35,16 @@ def safe_float(value):
         return 0.0
 # =====================================
 
-# 配置
-DB_DIR = "./vectordb"
-DOCS_DIR = "./docs"
+# 配置 - 修正：統一使用絕對路徑
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DB_DIR = os.path.join(BASE_DIR, "vectordb")  # 改成絕對路徑
+DOCS_DIR = os.path.join(BASE_DIR, "docs")    # 改成絕對路徑
 OLLAMA_HOST = "http://localhost:11434"  # Ollama 預設地址
+
+print(f"QA系統配置:")
+print(f"BASE_DIR: {BASE_DIR}")
+print(f"DB_DIR: {DB_DIR}")
+print(f"DOCS_DIR: {DOCS_DIR}")
 
 # RAG 配置
 EMBEDDING_MODEL = "BAAI/bge-small-zh-v1.5"
@@ -76,15 +82,24 @@ def init_rag_vector_db():
         # 載入向量資料庫
         vectordb = Chroma(
             persist_directory=DB_DIR,
-            embedding_function=embeddings
+            embedding_function=embeddings,
+            collection_name="default"
         )
 
         # 測試資料庫
-        test_docs = vectordb.similarity_search("測試", k=1)
-        print(f"✅ RAG 向量資料庫初始化成功，文件數: {vectordb._collection.count()}")
+        count = vectordb._collection.count()
+        print(f"✅ RAG 向量資料庫初始化成功")
+        print(f"   資料庫路徑: {DB_DIR}")
+        print(f"   文件數量: {count}")
+
+        if count == 0:
+            print(f"⚠️  警告: 向量資料庫為空，請先使用 knowledge API 建置知識庫")
+
         return vectordb
     except Exception as e:
         print(f"❌ RAG 向量資料庫初始化失敗: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 # 初始化搜尋工具和向量資料庫
@@ -264,26 +279,29 @@ async def search_rag(query: str, k: int = 4) -> Dict[str, Any]:
         results = []
         for i, doc in enumerate(docs):
             content = doc.page_content[:400]  # 限制長度
-            source = doc.metadata.get('source', '未知')
+            metadata = doc.metadata
+
             results.append({
                 "index": i + 1,
                 "content": content,
-                "source": source,
+                "source": metadata.get("source", "未知來源"),
                 "relevance": 1.0 - (i * 0.15),  # 簡單相關性評分
-                "type": "rag_document"
+                "type": "rag"
             })
 
-        print(f"✅ 找到 {len(results)} 個本地知識庫結果")
+        print(f"✅ 找到 {len(results)} 個相關文檔")
 
         return {
             "status": "success",
-            "message": f"找到 {len(results)} 個本地知識庫結果",
+            "message": f"找到 {len(results)} 個相關結果",
             "results": results,
             "query": query
         }
 
     except Exception as e:
         print(f"❌ RAG 檢索失敗: {e}")
+        import traceback
+        traceback.print_exc()
         return {
             "status": "error",
             "message": str(e),
@@ -291,24 +309,37 @@ async def search_rag(query: str, k: int = 4) -> Dict[str, Any]:
             "query": query
         }
 
-async def rag_qa_internal(question: str, k: int = 4) -> QuestionResponse:
-    """RAG 問答內部實現（使用本地知識庫）"""
-    start_time = datetime.now()
-
+# RAG 問答
+async def rag_qa_internal(question: str) -> QuestionResponse:
+    """執行 RAG 問答流程"""
     try:
-        # 先檢索本地知識庫
-        rag_results = await search_rag(question, k)
+        start_time = datetime.now()
+
+        # 檢索相關文檔
+        rag_results = await search_rag(question, k=4)
+
+        if rag_results["status"] == "error":
+            raise Exception(rag_results["message"])
+
+        if not rag_results["results"]:
+            return QuestionResponse(
+                answer="⚠️ 沒有找到相關的本地知識庫資訊。",
+                sources=[],
+                metadata={
+                    "type": "rag",
+                    "processing_time": round((datetime.now() - start_time).total_seconds(), 2),
+                    "message": "知識庫中沒有相關內容"
+                }
+            )
 
         # 構建上下文
-        if rag_results["status"] == "success" and rag_results["results"]:
-            context = "【本地知識庫資訊】\n\n"
-            for result in rag_results["results"]:
-                context += f"來源: {result['source']}\n"
-                context += f"內容: {result['content']}\n\n"
-        else:
-            context = "本地知識庫中沒有找到相關資訊。"
+        context = "【本地知識庫資訊】\n\n"
+        for result in rag_results["results"]:
+            context += f"來源: {result['source']}\n"
+            context += f"相關性: {result['relevance']:.2f}\n"
+            context += f"內容: {result['content']}\n\n"
 
-        # 構建提示詞
+        # 生成提示詞
         prompt = f"""請根據以下本地知識庫資訊回答問題：
 
 {context}
@@ -316,185 +347,163 @@ async def rag_qa_internal(question: str, k: int = 4) -> QuestionResponse:
 【問題】
 {question}
 
-請根據本地知識庫提供：
-1. 準確、有用的資訊
-2. 具體的細節和數據
-3. 實用的建議
-4. 相關的注意事項
+請提供：
+1. 核心資訊摘要
+2. 具體細節和數據
+3. 實用建議（如適用）
 
-如果知識庫中沒有足夠資訊，請基於您的知識補充說明。
-用繁體中文回答，保持專業且易於理解。
+用繁體中文回答，保持專業、客觀且易於理解。註明資訊來源為本地知識庫。
 
 回答："""
 
-        # 調用 Ollama
+        # 調用 Ollama 生成回答
+        print("🤖 正在生成回答...")
         answer, llm_time = await call_ollama_api(prompt)
 
-        # 計算總處理時間
-        total_time = (datetime.now() - start_time).total_seconds()
-
-        # 構建來源資訊
+        # 準備來源資訊
         sources = []
-        if rag_results["status"] == "success" and rag_results["results"]:
-            for result in rag_results["results"]:
-                sources.append({
-                    "source": f"本地知識庫: {result['source']}",
-                    "relevance": result["relevance"],
-                    "type": "rag",
-                    "content_preview": result["content"][:100]
-                })
-        else:
+        for result in rag_results["results"]:
             sources.append({
-                "source": "AI 知識庫",
-                "relevance": 0.9,
-                "type": "ai"
+                "source": f"本地知識庫: {result['source']}",
+                "relevance": result["relevance"],
+                "type": "rag",
+                "content_preview": result["content"][:100]
             })
 
-        sources.append({
-            "source": "Ollama AI 分析",
-            "relevance": 0.95,
-            "type": "ai",
-            "model": PREFERRED_MODEL
-        })
+        total_time = (datetime.now() - start_time).total_seconds()
 
         return QuestionResponse(
             answer=answer,
             sources=sources,
             metadata={
                 "type": "rag",
-                "model_used": PREFERRED_MODEL or "ai_model",
+                "model_used": PREFERRED_MODEL or "unknown",
                 "ollama_available": OLLAMA_AVAILABLE,
-                "processing_time": safe_round(total_time, 2),
-                "llm_time": safe_round(llm_time, 2),
-                "rag_results_count": len(rag_results["results"]),
-                "rag_status": rag_results["status"],
-                "answer_source": "ollama_ai_with_rag"
+                "processing_time": round(total_time, 2),
+                "llm_time": round(llm_time, 2) if llm_time else 0,
+                "results_count": len(rag_results["results"])
             }
         )
 
     except Exception as e:
         error_time = (datetime.now() - start_time).total_seconds()
         return QuestionResponse(
-            answer=f"處理問題時發生錯誤：{str(e)[:100]}",
+            answer=f"RAG 問答失敗：{str(e)}",
             sources=[],
             metadata={
                 "type": "rag",
                 "error": str(e),
-                "processing_time": safe_round(error_time, 2)
+                "processing_time": round(error_time, 2)
             }
         )
 
+# 網路問答
 async def web_qa_internal(question: str) -> QuestionResponse:
-    """網路問答內部實現（使用 DuckDuckGo 搜尋）"""
-    start_time = datetime.now()
-
+    """執行網路問答流程"""
     try:
-        # 使用 DuckDuckGo 進行搜尋
-        search_results = await search_duckduckgo(question, max_results=5)
+        start_time = datetime.now()
 
-        # 構建搜尋結果上下文
-        if search_results["status"] == "success" and search_results["results"]:
-            search_context = "【網路搜尋結果】\n\n"
-            for i, result in enumerate(search_results["results"], 1):
-                content = result["content"]
-                search_context += f"{i}. {content}\n\n"
+        # 網路搜尋
+        web_results = await search_duckduckgo(question, max_results=5)
 
-            print(f"✅ 使用 {len(search_results['results'])} 個搜尋結果")
-        else:
-            # 如果搜尋失敗，使用模擬搜尋
-            search_context = f"搜尋關鍵字：{question}\n\n搜尋結果：\n1. 相關網路資訊\n2. 新聞報導\n3. 用戶討論\n4. 官方資訊"
-            print("⚠️ 使用模擬搜尋結果")
+        if web_results["status"] == "error":
+            raise Exception(web_results["message"])
 
-        # 構建給 Ollama 的提示詞
-        prompt = f"""請根據以下搜尋結果回答問題：
+        if not web_results["results"]:
+            return QuestionResponse(
+                answer="⚠️ 沒有找到相關的網路搜尋結果。",
+                sources=[],
+                metadata={
+                    "type": "web",
+                    "processing_time": round((datetime.now() - start_time).total_seconds(), 2),
+                    "message": "網路搜尋沒有結果"
+                }
+            )
 
-問題：{question}
+        # 構建上下文
+        context = "【網路搜尋資訊】\n\n"
+        for i, result in enumerate(web_results["results"], 1):
+            context += f"結果 {i} (相關性: {result['relevance']:.2f}):\n"
+            context += f"{result['content']}\n\n"
 
-{search_context}
+        # 生成提示詞
+        prompt = f"""請根據以下網路搜尋結果回答問題：
 
-請基於搜尋結果提供：
-1. 關鍵資訊摘要
-2. 實用建議
-3. 進一步查詢的方向
+{context}
 
-用繁體中文回答，註明資訊來源為網路搜尋。
+【問題】
+{question}
+
+請提供：
+1. 核心資訊摘要
+2. 最新動態和趨勢
+3. 實用建議
+
+用繁體中文回答，注意資訊的時效性。註明資訊來源為網路搜尋。
 
 回答："""
 
-        # 調用 Ollama
+        # 調用 Ollama 生成回答
+        print("🤖 正在生成回答...")
         answer, llm_time = await call_ollama_api(prompt)
 
-        total_time = (datetime.now() - start_time).total_seconds()
-
-        # 構建來源資訊
+        # 準備來源資訊
         sources = []
-        if search_results["status"] == "success" and search_results["results"]:
-            for result in search_results["results"][:3]:  # 只取前3個
-                sources.append({
-                    "source": f"DuckDuckGo 搜尋結果 #{result['index']}",
-                    "relevance": result["relevance"],
-                    "type": "web",
-                    "content_preview": result["content"][:100]
-                })
-        else:
+        for result in web_results["results"]:
             sources.append({
-                "source": "模擬網路搜尋",
-                "relevance": 0.8,
+                "source": f"DuckDuckGo 搜尋結果 #{result['index']}",
+                "relevance": result["relevance"],
                 "type": "web",
-                "note": "實際搜尋未啟用或失敗"
+                "content_preview": result["content"][:100]
             })
 
-        sources.append({
-            "source": "Ollama AI 分析",
-            "relevance": 0.9,
-            "type": "ai",
-            "model": PREFERRED_MODEL
-        })
+        total_time = (datetime.now() - start_time).total_seconds()
 
         return QuestionResponse(
             answer=answer,
             sources=sources,
             metadata={
                 "type": "web",
-                "model_used": PREFERRED_MODEL or "simulation",
+                "model_used": PREFERRED_MODEL or "unknown",
+                "ollama_available": OLLAMA_AVAILABLE,
                 "processing_time": round(total_time, 2),
                 "llm_time": round(llm_time, 2) if llm_time else 0,
-                "search_engine": search_results.get("search_engine", "simulated"),
-                "search_status": search_results["status"],
-                "search_results_count": len(search_results["results"])
+                "search_engine": web_results.get("search_engine", "DuckDuckGo"),
+                "results_count": len(web_results["results"])
             }
         )
 
     except Exception as e:
+        error_time = (datetime.now() - start_time).total_seconds()
         return QuestionResponse(
-            answer=f"網路搜尋失敗：{str(e)[:100]}",
+            answer=f"網路問答失敗：{str(e)}",
             sources=[],
             metadata={
                 "type": "web",
                 "error": str(e),
-                "processing_time": round((datetime.now() - start_time).total_seconds(), 2)
+                "processing_time": round(error_time, 2)
             }
         )
 
+# 混合問答
 async def hybrid_qa_internal(question: str) -> QuestionResponse:
-    """混合問答內部實現（結合 RAG 和 Web）"""
-    start_time = datetime.now()
-
+    """執行混合問答流程（RAG + Web Search）"""
     try:
-        print(f"🔀 開始混合問答: {question}")
+        start_time = datetime.now()
 
-        # 同時進行 RAG 檢索和 Web 搜尋
-        rag_task = search_rag(question, k=4)
-        web_task = search_duckduckgo(question, max_results=5)
+        # 並行執行 RAG 檢索和網路搜尋
+        print("🔄 正在執行混合檢索...")
+        rag_results, web_results = await asyncio.gather(
+            search_rag(question, k=4),
+            search_duckduckgo(question, max_results=5)
+        )
 
-        # 等待兩個任務完成
-        rag_results, web_results = await asyncio.gather(rag_task, web_task)
+        print(f"RAG 狀態: {rag_results['status']}, 結果數: {len(rag_results['results'])}")
+        print(f"Web 狀態: {web_results['status']}, 結果數: {len(web_results['results'])}")
 
-        # 評估兩種來源的相關性
-        rag_has_content = rag_results["status"] == "success" and rag_results["results"]
-        web_has_content = web_results["status"] == "success" and web_results["results"]
-
-        print(f"📊 檢索結果: RAG={len(rag_results['results']) if rag_has_content else 0} 個, Web={len(web_results['results']) if web_has_content else 0} 個")
+        # 檢查是否有可用的結果
+        rag_has_content = rag_results["status"] == "success" and len(rag_results["results"]) > 0
+        web_has_content = web_results["status"] == "success" and len(web_results["results"]) > 0
 
         # 構建整合的上下文
         context_parts = []

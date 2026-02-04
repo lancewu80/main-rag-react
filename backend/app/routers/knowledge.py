@@ -74,8 +74,10 @@ DOCS_DIR = os.path.join(BASE_DIR, "docs")  # 原始文檔目錄
 VECTOR_DB_DIR = os.path.join(BASE_DIR, "vectordb")  # 向量資料庫目錄
 
 # Chroma 設置 - 使用獨立的 chroma_db 目錄
-CHROMA_DB_PATH = os.path.join(VECTOR_DB_DIR, "chroma_db")
-CHROMA_COLLECTION_NAME = "knowledge_base"
+# CHROMA_DB_PATH = os.path.join(VECTOR_DB_DIR, "chroma_db")
+CHROMA_DB_PATH = VECTOR_DB_DIR
+# CHROMA_COLLECTION_NAME = "knowledge_base"
+CHROMA_COLLECTION_NAME =  "default"
 
 METADATA_FILE = os.path.join(KNOWLEDGE_BASE_DIR, "metadata.json")
 DOCUMENT_METADATA_FILE = os.path.join(KNOWLEDGE_BASE_DIR, "document_metadata.json")
@@ -112,7 +114,8 @@ def get_embeddings():
         print("正在載入嵌入模型...")
         # 使用輕量級的中文友好嵌入模型
         embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            # model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            model_name="BAAI/bge-small-zh-v1.5",
             model_kwargs={'device': 'cpu'},
             encode_kwargs={'normalize_embeddings': True}
         )
@@ -1163,7 +1166,7 @@ async def search_knowledge(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-      
+
 @router.get("/task/{task_id}")
 async def get_task_status(task_id: str):
     """獲取任務狀態"""
