@@ -1,16 +1,31 @@
 import {
   Api,
+  Article,
+  AttachFile,
+  Build,
+  CloudUpload,
+  Code,
   ContentCopy,
   Dashboard,
+  Delete,
+  Description,
   Folder,
+  FolderOpen,
   History,
+  ImportExport,
   Info,
+  InsertDriveFile,
   Menu as MenuIcon,
   Merge,
+  PictureAsPdf,
   QuestionAnswer,
+  Replay,
+  Search,
   Send,
   SmartToy,
   Storage,
+  TableChart,
+  Upload,
   Web
 } from '@mui/icons-material';
 import {
@@ -21,12 +36,14 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   Chip,
   CircularProgress,
   Container,
   CssBaseline,
   Divider,
   Drawer,
+  FormControlLabel,
   Grid,
   IconButton,
   LinearProgress,
@@ -36,6 +53,14 @@ import {
   ListItemText,
   Paper,
   Snackbar,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Tabs,
   TextField,
   ThemeProvider,
   Toolbar,
@@ -62,6 +87,9 @@ const theme = createTheme({
     },
     error: {
       main: '#f44336',
+    },
+    info: {
+      main: '#2196f3',
     },
     background: {
       default: '#f8f9fa',
@@ -159,16 +187,74 @@ class ApiService {
     });
   }
 
-  // 知識庫相關
-  static async buildKnowledgeBase(force = false) {
+  // 知識庫相關 - 完整功能
+  static async buildKnowledgeBase(force = false, incremental = true) {
     return this.request('/knowledge/build', {
       method: 'POST',
-      body: JSON.stringify({ force }),
+      body: JSON.stringify({ force, incremental }),
     });
   }
 
   static async getKnowledgeStatus() {
     return this.request('/knowledge/status');
+  }
+
+  static async getKnowledgeTasks(taskId = null) {
+    if (taskId) {
+      return this.request(`/knowledge/task/${taskId}`);
+    }
+    return this.request('/knowledge/tasks');
+  }
+
+  static async listKnowledgeDocuments(status = 'all', fileType = null) {
+    const params = new URLSearchParams();
+    if (status) params.append('status', status);
+    if (fileType) params.append('file_type', fileType);
+    return this.request(`/knowledge/documents?${params.toString()}`);
+  }
+
+  static async uploadKnowledgeDocuments(files) {
+    const formData = new FormData();
+    files.forEach(file => {
+      formData.append('files', file);
+    });
+
+    return fetch(`${API_BASE_URL}/knowledge/upload`, {
+      method: 'POST',
+      body: formData,
+    }).then(res => res.json());
+  }
+
+  static async importCSV(file, options = {}) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('has_headers', options.hasHeaders || true);
+    formData.append('delimiter', options.delimiter || ',');
+    if (options.contentColumn) {
+      formData.append('content_column', options.contentColumn);
+    }
+
+    return fetch(`${API_BASE_URL}/knowledge/csv/import`, {
+      method: 'POST',
+      body: formData,
+    }).then(res => res.json());
+  }
+
+  static async searchKnowledge(query, limit = 10) {
+    return this.request('/knowledge/search', {
+      method: 'POST',
+      body: JSON.stringify({ query, limit }),
+    });
+  }
+
+  static async deleteKnowledgeDocument(filename) {
+    return this.request(`/knowledge/document/${filename}`, {
+      method: 'DELETE',
+    });
+  }
+
+  static async getBuildHistory(limit = 10) {
+    return this.request(`/knowledge/build-history?limit=${limit}`);
   }
 }
 
@@ -240,8 +326,8 @@ function Sidebar({ activeTab, onTabChange }) {
     { id: 'rag', label: 'AI 智能問答', icon: <QuestionAnswer />, color: 'secondary', badge: 'AI' },
     { id: 'web', label: '網路資訊分析', icon: <Web />, color: 'info' },
     { id: 'hybrid', label: '綜合 AI 分析', icon: <Merge />, color: 'warning', badge: '智能' },
-    { id: 'documents', label: '文件管理', icon: <Folder />, color: 'success' },
-    { id: 'knowledge', label: '知識庫', icon: <Storage />, color: 'primary' },
+    { id: 'knowledge', label: '知識庫管理', icon: <Storage />, color: 'success' },
+    { id: 'documents', label: '文件管理', icon: <Folder />, color: 'primary' },
     { id: 'api', label: 'API 測試', icon: <Api />, color: 'secondary' },
     { id: 'info', label: '系統資訊', icon: <Info />, color: 'info' },
   ];
@@ -1115,7 +1201,7 @@ function SystemInfoPanel() {
                   { name: 'Ollama AI 服務', status: apiStatus === 'connected' ? 'active' : 'inactive', icon: <SmartToy /> },
                   { name: 'DuckDuckGo 搜尋', status: searchStatus === 'connected' ? 'active' : 'inactive', icon: <Web /> },
                   { name: '文件管理', status: 'inactive', icon: <Folder /> },
-                  { name: '知識庫管理', status: 'inactive', icon: <Storage /> },
+                  { name: '知識庫管理', status: 'active', icon: <Storage /> },
                 ].map((module, idx) => (
                   <Grid item xs={12} sm={6} md={4} key={idx}>
                     <Paper sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
@@ -1136,6 +1222,1002 @@ function SystemInfoPanel() {
           </Card>
         </Grid>
       </Grid>
+    </Box>
+  );
+}
+
+// 文件管理面板
+function DocumentManagementPanel() {
+  const [documents, setDocuments] = useState([]);
+  const [uploadFiles, setUploadFiles] = useState([]);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+
+  useEffect(() => {
+    loadDocuments();
+  }, []);
+
+  const loadDocuments = async () => {
+    try {
+      const result = await ApiService.listKnowledgeDocuments('all');
+      setDocuments(result.documents || []);
+    } catch (error) {
+      console.error('載入文件失敗:', error);
+    }
+  };
+
+  const handleFileUpload = async () => {
+    if (!uploadFiles.length) {
+      setSnackbar({
+        open: true,
+        message: '請選擇要上傳的文件',
+        severity: 'warning'
+      });
+      return;
+    }
+
+    setUploadLoading(true);
+    try {
+      const result = await ApiService.uploadKnowledgeDocuments(uploadFiles);
+      setSnackbar({
+        open: true,
+        message: result.message || '文件上傳成功',
+        severity: 'success'
+      });
+      setUploadFiles([]);
+      loadDocuments();
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: `上傳失敗: ${error.message}`,
+        severity: 'error'
+      });
+    } finally {
+      setUploadLoading(false);
+    }
+  };
+
+  const handleDeleteDocument = async (filename) => {
+    if (!window.confirm(`確定要刪除文件 ${filename} 嗎？`)) return;
+
+    try {
+      await ApiService.deleteKnowledgeDocument(filename);
+      setSnackbar({
+        open: true,
+        message: '文件刪除成功',
+        severity: 'success'
+      });
+      loadDocuments();
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: `刪除失敗: ${error.message}`,
+        severity: 'error'
+      });
+    }
+  };
+
+  const getFileIcon = (fileType) => {
+    const icons = {
+      pdf: <PictureAsPdf />,
+      txt: <Article />,
+      csv: <TableChart />,
+      md: <Description />,
+      json: <Code />
+    };
+    return icons[fileType] || <InsertDriveFile />;
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const handleSnackbarClose = () => {
+    setSnackbar({ ...snackbar, open: false });
+  };
+
+  return (
+    <Box>
+      <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', mb: 4 }}>
+        📁 文件管理
+      </Typography>
+
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          📤 上傳文件
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
+          <Button
+            variant="contained"
+            component="label"
+            startIcon={<CloudUpload />}
+          >
+            選擇文件
+            <input
+              type="file"
+              hidden
+              multiple
+              onChange={(e) => setUploadFiles(Array.from(e.target.files))}
+            />
+          </Button>
+          <Typography variant="body2">
+            {uploadFiles.length > 0
+              ? `已選擇 ${uploadFiles.length} 個文件`
+              : '支持 .txt, .pdf, .csv, .md, .json 格式'}
+          </Typography>
+        </Box>
+
+        {uploadFiles.length > 0 && (
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body2" gutterBottom>
+              選擇的文件：
+            </Typography>
+            <List dense>
+              {uploadFiles.map((file, index) => (
+                <ListItem key={index}>
+                  <ListItemIcon>
+                    <InsertDriveFile />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={file.name}
+                    secondary={formatFileSize(file.size)}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          </Box>
+        )}
+
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={handleFileUpload}
+          disabled={uploadLoading || uploadFiles.length === 0}
+          startIcon={uploadLoading ? <CircularProgress size={20} /> : <Upload />}
+        >
+          {uploadLoading ? '上傳中...' : '上傳文件'}
+        </Button>
+      </Paper>
+
+      <Paper sx={{ p: 3 }}>
+        <Typography variant="h6" gutterBottom sx={{ mb: 3 }}>
+          📄 文件列表 (共 {documents.length} 個文件)
+        </Typography>
+        {documents.length > 0 ? (
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>文件名</TableCell>
+                  <TableCell>類型</TableCell>
+                  <TableCell>大小</TableCell>
+                  <TableCell>狀態</TableCell>
+                  <TableCell>最後修改</TableCell>
+                  <TableCell>操作</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {documents.map((doc, index) => (
+                  <TableRow key={index}>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        {getFileIcon(doc.file_type)}
+                        <Typography variant="body2">{doc.filename}</Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      <Chip label={doc.file_type} size="small" />
+                    </TableCell>
+                    <TableCell>{formatFileSize(doc.size)}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={doc.status === 'processed' ? '已處理' : '已上傳'}
+                        color={doc.status === 'processed' ? 'success' : 'info'}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {new Date(doc.modified_time).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="small"
+                        color="error"
+                        startIcon={<Delete />}
+                        onClick={() => handleDeleteDocument(doc.filename)}
+                      >
+                        刪除
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        ) : (
+          <Box sx={{ textAlign: 'center', py: 4 }}>
+            <FolderOpen sx={{ fontSize: 48, opacity: 0.5, mb: 2 }} />
+            <Typography variant="body1">暫無文件</Typography>
+            <Typography variant="body2" color="text.secondary">
+              請上傳文件或檢查知識庫目錄
+            </Typography>
+          </Box>
+        )}
+      </Paper>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={3000}
+        onClose={handleSnackbarClose}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={handleSnackbarClose} severity={snackbar.severity}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+    </Box>
+  );
+}
+
+// 知識庫管理面板
+function KnowledgeManagementPanel() {
+  const [documents, setDocuments] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [buildTask, setBuildTask] = useState(null);
+  const [buildLoading, setBuildLoading] = useState(false);
+  const [uploadFiles, setUploadFiles] = useState([]);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [csvImportLoading, setCsvImportLoading] = useState(false);
+  const [systemStatus, setSystemStatus] = useState(null);
+  const [activeTab, setActiveTab] = useState('documents');
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+  const [buildHistory, setBuildHistory] = useState([]);
+  const [csvOptions, setCsvOptions] = useState({
+    hasHeaders: true,
+    delimiter: ',',
+    contentColumn: ''
+  });
+
+  // 載入初始數據
+  useEffect(() => {
+    loadDocuments();
+    loadSystemStatus();
+    loadBuildHistory();
+
+    // 如果有正在進行的任務，開始輪詢
+    if (buildTask && buildTask.status === 'started') {
+      const interval = setInterval(checkTaskStatus, 2000);
+      return () => clearInterval(interval);
+    }
+  }, []);
+
+  const loadDocuments = async () => {
+    try {
+      const result = await ApiService.listKnowledgeDocuments('all');
+      setDocuments(result.documents || []);
+    } catch (error) {
+      console.error('載入文件失敗:', error);
+    }
+  };
+
+  const loadSystemStatus = async () => {
+    try {
+      const status = await ApiService.getKnowledgeStatus();
+      setSystemStatus(status);
+    } catch (error) {
+      console.error('載入系統狀態失敗:', error);
+    }
+  };
+
+  const loadBuildHistory = async () => {
+    try {
+      const result = await ApiService.getBuildHistory(5);
+      setBuildHistory(result.history || []);
+    } catch (error) {
+      console.error('載入建置歷史失敗:', error);
+    }
+  };
+
+  const handleFileUpload = async () => {
+    if (!uploadFiles.length) {
+      setSnackbar({
+        open: true,
+        message: '請選擇要上傳的文件',
+        severity: 'warning'
+      });
+      return;
+    }
+
+    setUploadLoading(true);
+    try {
+      const result = await ApiService.uploadKnowledgeDocuments(uploadFiles);
+      setSnackbar({
+        open: true,
+        message: result.message || '文件上傳成功',
+        severity: 'success'
+      });
+      setUploadFiles([]);
+      loadDocuments();
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: `上傳失敗: ${error.message}`,
+        severity: 'error'
+      });
+    } finally {
+      setUploadLoading(false);
+    }
+  };
+
+  const handleCSVImport = async () => {
+    const csvFile = uploadFiles.find(file => file.name.toLowerCase().endsWith('.csv'));
+    if (!csvFile) {
+      setSnackbar({
+        open: true,
+        message: '請選擇 CSV 文件',
+        severity: 'warning'
+      });
+      return;
+    }
+
+    setCsvImportLoading(true);
+    try {
+      const result = await ApiService.importCSV(csvFile, csvOptions);
+      setSnackbar({
+        open: true,
+        message: result.message || 'CSV 導入任務已啟動',
+        severity: 'success'
+      });
+      setBuildTask(result);
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: `CSV 導入失敗: ${error.message}`,
+        severity: 'error'
+      });
+    } finally {
+      setCsvImportLoading(false);
+    }
+  };
+
+  const handleBuildKnowledge = async (force = false) => {
+    setBuildLoading(true);
+    try {
+      const result = await ApiService.buildKnowledgeBase(force, true);
+      setSnackbar({
+        open: true,
+        message: result.message || '知識庫建置任務已啟動',
+        severity: 'success'
+      });
+      setBuildTask(result);
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: `建置失敗: ${error.message}`,
+        severity: 'error'
+      });
+    } finally {
+      setBuildLoading(false);
+    }
+  };
+
+  const checkTaskStatus = async () => {
+    if (!buildTask?.task_id) return;
+
+    try {
+      const status = await ApiService.getKnowledgeTasks(buildTask.task_id);
+
+      if (status.status === 'completed' || status.status === 'failed') {
+        setSnackbar({
+          open: true,
+          message: status.message || '任務完成',
+          severity: status.status === 'completed' ? 'success' : 'error'
+        });
+        setBuildTask(null);
+        loadDocuments();
+        loadSystemStatus();
+        loadBuildHistory();
+      }
+    } catch (error) {
+      console.error('檢查任務狀態失敗:', error);
+    }
+  };
+
+const handleSearchKnowledge = async () => {
+  if (!searchQuery.trim()) {
+    setSnackbar({
+      open: true,
+      message: '請輸入搜索關鍵詞',
+      severity: 'warning'
+    });
+    return;
+  }
+
+  setSearchLoading(true);
+  try {
+    const result = await ApiService.searchKnowledge(searchQuery, 10);
+
+    // 確保正確處理響應格式
+    if (result.results && Array.isArray(result.results)) {
+      setSearchResults(result);
+      setSnackbar({
+        open: true,
+        message: result.message || `找到 ${result.total_found || result.results.length} 個結果`,
+        severity: 'success'
+      });
+    } else {
+      // 如果響應格式不同，嘗試提取結果
+      const results = result.results || result.data || [];
+      setSearchResults({
+        ...result,
+        results: results,
+        total_found: results.length
+      });
+      setSnackbar({
+        open: true,
+        message: `找到 ${results.length} 個結果`,
+        severity: 'success'
+      });
+    }
+
+  } catch (error) {
+    console.error('搜索詳細錯誤:', error);
+    setSnackbar({
+      open: true,
+      message: `搜索失敗: ${error.message}`,
+      severity: 'error'
+    });
+  } finally {
+    setSearchLoading(false);
+  }
+};
+
+  const handleDeleteDocument = async (filename) => {
+    if (!window.confirm(`確定要刪除文件 ${filename} 嗎？`)) return;
+
+    try {
+      await ApiService.deleteKnowledgeDocument(filename);
+      setSnackbar({
+        open: true,
+        message: '文件刪除成功',
+        severity: 'success'
+      });
+      loadDocuments();
+      loadSystemStatus();
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: `刪除失敗: ${error.message}`,
+        severity: 'error'
+      });
+    }
+  };
+
+  const handleSnackbarClose = () => {
+    setSnackbar({ ...snackbar, open: false });
+  };
+
+  const getFileIcon = (fileType) => {
+    const icons = {
+      pdf: <PictureAsPdf />,
+      txt: <Article />,
+      csv: <TableChart />,
+      md: <Description />,
+      json: <Code />
+    };
+    return icons[fileType] || <InsertDriveFile />;
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  return (
+    <Box>
+      <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', mb: 4 }}>
+        📚 知識庫管理系統
+      </Typography>
+
+      {/* 系統狀態卡片 */}
+      {systemStatus && (
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              📊 系統狀態
+            </Typography>
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={6}>
+                <Typography variant="body2" color="text.secondary">
+                  知識庫狀態
+                </Typography>
+                <Typography variant="body1" fontWeight="medium">
+                  {systemStatus.knowledge_base_exists ? '✅ 已建立' : '❌ 未建立'}
+                </Typography>
+              </Grid>
+              <Grid item xs={6} md={3}>
+                <Typography variant="body2" color="text.secondary">
+                  文件數量
+                </Typography>
+                <Typography variant="body1" fontWeight="medium">
+                  {systemStatus.total_documents || 0}
+                </Typography>
+              </Grid>
+              <Grid item xs={6} md={3}>
+                <Typography variant="body2" color="text.secondary">
+                  知識片段
+                </Typography>
+                <Typography variant="body1" fontWeight="medium">
+                  {systemStatus.total_chunks || 0}
+                </Typography>
+              </Grid>
+              <Grid item xs={6} md={3}>
+                <Typography variant="body2" color="text.secondary">
+                  最後更新
+                </Typography>
+                <Typography variant="body1" fontWeight="medium">
+                  {systemStatus.last_updated ?
+                    new Date(systemStatus.last_updated).toLocaleString() : '從未更新'}
+                </Typography>
+              </Grid>
+              <Grid item xs={6} md={3}>
+                <Typography variant="body2" color="text.secondary">
+                  總大小
+                </Typography>
+                <Typography variant="body1" fontWeight="medium">
+                  {systemStatus.total_size_mb || 0} MB
+                </Typography>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 標籤頁 */}
+      <Paper sx={{ mb: 3 }}>
+        <Tabs
+          value={activeTab}
+          onChange={(e, value) => setActiveTab(value)}
+          variant="scrollable"
+          scrollButtons="auto"
+        >
+          <Tab label="📁 文件管理" value="documents" />
+          <Tab label="🚀 建置任務" value="build" />
+          <Tab label="🔍 知識檢索" value="search" />
+          <Tab label="📊 CSV 導入" value="csv" />
+          <Tab label="📜 建置歷史" value="history" />
+        </Tabs>
+      </Paper>
+
+      {/* 文件管理標籤 */}
+      {activeTab === 'documents' && (
+        <Box>
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              📤 上傳文件
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
+              <Button
+                variant="contained"
+                component="label"
+                startIcon={<CloudUpload />}
+              >
+                選擇文件
+                <input
+                  type="file"
+                  hidden
+                  multiple
+                  onChange={(e) => setUploadFiles(Array.from(e.target.files))}
+                />
+              </Button>
+              <Typography variant="body2">
+                {uploadFiles.length > 0
+                  ? `已選擇 ${uploadFiles.length} 個文件`
+                  : '支持 .txt, .pdf, .csv, .md, .json'}
+              </Typography>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleFileUpload}
+                disabled={uploadLoading || uploadFiles.length === 0}
+                startIcon={uploadLoading ? <CircularProgress size={20} /> : <Upload />}
+              >
+                {uploadLoading ? '上傳中...' : '上傳'}
+              </Button>
+            </Box>
+
+            {uploadFiles.length > 0 && (
+              <Box sx={{ mb: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+                <Typography variant="body2" gutterBottom>
+                  已選擇的文件：
+                </Typography>
+                {uploadFiles.map((file, index) => (
+                  <Typography key={index} variant="body2" color="text.secondary">
+                    • {file.name} ({formatFileSize(file.size)})
+                  </Typography>
+                ))}
+              </Box>
+            )}
+          </Paper>
+
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom sx={{ mb: 3 }}>
+              📄 文件列表 (共 {documents.length} 個文件)
+            </Typography>
+            {documents.length > 0 ? (
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>文件名</TableCell>
+                      <TableCell>類型</TableCell>
+                      <TableCell>大小</TableCell>
+                      <TableCell>狀態</TableCell>
+                      <TableCell>最後修改</TableCell>
+                      <TableCell>操作</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {documents.map((doc, index) => (
+                      <TableRow key={index}>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            {getFileIcon(doc.file_type)}
+                            <Typography variant="body2">{doc.filename}</Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Chip label={doc.file_type} size="small" />
+                        </TableCell>
+                        <TableCell>{formatFileSize(doc.size)}</TableCell>
+                        <TableCell>
+                          <Chip
+                            label={doc.status === 'processed' ? '已處理' : '已上傳'}
+                            color={doc.status === 'processed' ? 'success' : 'info'}
+                            size="small"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {new Date(doc.modified_time).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="small"
+                            color="error"
+                            onClick={() => handleDeleteDocument(doc.filename)}
+                          >
+                            刪除
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            ) : (
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <FolderOpen sx={{ fontSize: 48, opacity: 0.5, mb: 2 }} />
+                <Typography variant="body1">暫無文件</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  請上傳文件或檢查 docs 目錄
+                </Typography>
+              </Box>
+            )}
+          </Paper>
+        </Box>
+      )}
+
+      {/* 建置任務標籤 */}
+      {activeTab === 'build' && (
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            🚀 知識庫建置
+          </Typography>
+
+          <Alert severity="info" sx={{ mb: 3 }}>
+            增量建置：只處理新上傳的文件<br/>
+            完全重建：重新處理所有文件
+          </Alert>
+
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            <Grid item xs={12} md={6}>
+              <Card>
+                <CardContent>
+                  <Typography variant="subtitle1" gutterBottom>
+                    增量建置
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" paragraph>
+                    處理新上傳的文件，保留現有知識庫內容
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={() => handleBuildKnowledge(false)}
+                    disabled={buildLoading}
+                    startIcon={buildLoading ? <CircularProgress size={20} /> : <Build />}
+                    fullWidth
+                  >
+                    {buildLoading ? '建置中...' : '增量建置'}
+                  </Button>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Card>
+                <CardContent>
+                  <Typography variant="subtitle1" gutterBottom>
+                    完全重建
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" paragraph>
+                    清空現有知識庫，重新處理所有文件
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="warning"
+                    onClick={() => handleBuildKnowledge(true)}
+                    disabled={buildLoading}
+                    startIcon={buildLoading ? <CircularProgress size={20} /> : <Replay />}
+                    fullWidth
+                  >
+                    {buildLoading ? '重建中...' : '完全重建'}
+                  </Button>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+
+          {/* 任務狀態顯示 */}
+          {buildTask && (
+            <Paper sx={{ p: 2, bgcolor: 'grey.50', mb: 3 }}>
+              <Typography variant="subtitle1" gutterBottom>
+                任務狀態
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                <Typography variant="body2">
+                  任務ID: {buildTask.task_id}
+                </Typography>
+                <Chip
+                  label={buildTask.type === 'full' ? '完全重建' : '增量建置'}
+                  size="small"
+                  color="primary"
+                />
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Typography variant="body2" color="text.secondary">
+                  狀態: 進行中
+                </Typography>
+                <Button
+                  size="small"
+                  onClick={checkTaskStatus}
+                >
+                  檢查狀態
+                </Button>
+              </Box>
+            </Paper>
+          )}
+        </Paper>
+      )}
+
+      {/* 知識檢索標籤 */}
+      {activeTab === 'search' && (
+        <Box>
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              🔍 知識檢索
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+              <TextField
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="輸入關鍵詞搜索知識庫..."
+                fullWidth
+                variant="outlined"
+              />
+              <Button
+                variant="contained"
+                onClick={handleSearchKnowledge}
+                disabled={searchLoading}
+                startIcon={searchLoading ? <CircularProgress size={20} /> : <Search />}
+              >
+                {searchLoading ? '搜索中...' : '搜索'}
+              </Button>
+            </Box>
+          </Paper>
+
+{searchResults && (
+  <Paper sx={{ p: 3 }}>
+    <Typography variant="h6" gutterBottom>
+      搜索結果 ({searchResults.total_found || searchResults.results?.length || 0})
+    </Typography>
+
+    {searchResults.results && searchResults.results.length > 0 ? (
+      searchResults.results.map((result, index) => (
+        <Paper key={index} sx={{ p: 2, mb: 2, bgcolor: 'grey.50' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+            <Typography variant="subtitle2">
+              {result.source_file || '未知來源'}
+            </Typography>
+            <Chip
+              label={`相似度: ${((result.similarity || 0) * 100).toFixed(1)}%`}
+              size="small"
+              color="primary"
+            />
+          </Box>
+          <Typography variant="body2" sx={{ mb: 1, whiteSpace: 'pre-wrap' }}>
+            {result.content}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            匹配類型: {result.metadata?.match_type || '未知'}
+          </Typography>
+        </Paper>
+      ))
+    ) : (
+      <Box sx={{ textAlign: 'center', py: 4 }}>
+        <Search sx={{ fontSize: 48, opacity: 0.5, mb: 2 }} />
+        <Typography variant="body1">未找到相關結果</Typography>
+        <Typography variant="body2" color="text.secondary">
+          請嘗試其他關鍵詞或檢查知識庫是否已建立
+        </Typography>
+      </Box>
+    )}
+  </Paper>
+)}
+        </Box>
+      )}
+
+      {/* CSV 導入標籤 */}
+      {activeTab === 'csv' && (
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            📊 CSV 文件導入
+          </Typography>
+
+          <Alert severity="info" sx={{ mb: 3 }}>
+            CSV 文件將被轉換為知識庫可處理的文本格式
+          </Alert>
+
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              選擇 CSV 文件
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+              <Button
+                variant="outlined"
+                component="label"
+                startIcon={<AttachFile />}
+              >
+                選擇 CSV 文件
+                <input
+                  type="file"
+                  hidden
+                  accept=".csv"
+                  onChange={(e) => setUploadFiles(Array.from(e.target.files))}
+                />
+              </Button>
+              <Typography variant="body2">
+                {uploadFiles.length > 0
+                  ? uploadFiles[0].name
+                  : '未選擇文件'}
+              </Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              導入選項
+            </Typography>
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={4}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={csvOptions.hasHeaders}
+                      onChange={(e) => setCsvOptions({...csvOptions, hasHeaders: e.target.checked})}
+                    />
+                  }
+                  label="包含標題行"
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <TextField
+                  label="分隔符"
+                  value={csvOptions.delimiter}
+                  onChange={(e) => setCsvOptions({...csvOptions, delimiter: e.target.value})}
+                  size="small"
+                  fullWidth
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <TextField
+                  label="內容欄位名稱"
+                  value={csvOptions.contentColumn}
+                  onChange={(e) => setCsvOptions({...csvOptions, contentColumn: e.target.value})}
+                  size="small"
+                  placeholder="自動偵測"
+                  helperText="留空則自動偵測"
+                  fullWidth
+                />
+              </Grid>
+            </Grid>
+          </Box>
+
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleCSVImport}
+            disabled={csvImportLoading || uploadFiles.length === 0}
+            startIcon={csvImportLoading ? <CircularProgress size={20} /> : <ImportExport />}
+          >
+            {csvImportLoading ? '導入中...' : '開始導入'}
+          </Button>
+        </Paper>
+      )}
+
+      {/* 建置歷史標籤 */}
+      {activeTab === 'history' && (
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            📜 建置歷史
+          </Typography>
+
+          {buildHistory.length > 0 ? (
+            <List>
+              {buildHistory.map((history, index) => (
+                <ListItem key={index} divider>
+                  <ListItemText
+                    primary={`任務 ${history.task_id || 'N/A'}`}
+                    secondary={
+                      <>
+                        <Typography variant="body2" component="span">
+                          時間: {new Date(history.timestamp).toLocaleString()}
+                        </Typography>
+                        <br />
+                        <Typography variant="body2" component="span">
+                          類型: {history.type === 'full' ? '完全重建' : '增量建置'}
+                        </Typography>
+                        <br />
+                        <Typography variant="body2" component="span">
+                          處理文件: {history.processed_files || 0} 個
+                        </Typography>
+                      </>
+                    }
+                  />
+                  <Chip
+                    label={history.errors?.length > 0 ? '有錯誤' : '成功'}
+                    color={history.errors?.length > 0 ? 'warning' : 'success'}
+                    size="small"
+                  />
+                </ListItem>
+              ))}
+            </List>
+          ) : (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <History sx={{ fontSize: 48, opacity: 0.5, mb: 2 }} />
+              <Typography variant="body1">暫無建置歷史</Typography>
+            </Box>
+          )}
+        </Paper>
+      )}
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={3000}
+        onClose={handleSnackbarClose}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={handleSnackbarClose} severity={snackbar.severity}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }
@@ -1229,6 +2311,57 @@ function App() {
                   </Button>
                 </Card>
               </Grid>
+
+              <Grid item xs={12} md={4}>
+                <Card sx={{ height: '100%', textAlign: 'center', p: 3 }}>
+                  <Storage sx={{ fontSize: 60, color: 'success.main', mb: 2 }} />
+                  <Typography variant="h5" gutterBottom>知識庫管理</Typography>
+                  <Typography variant="body2" paragraph>
+                    建立、管理和搜索知識庫內容
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="success"
+                    onClick={() => setActiveTab('knowledge')}
+                  >
+                    開始使用
+                  </Button>
+                </Card>
+              </Grid>
+
+              <Grid item xs={12} md={4}>
+                <Card sx={{ height: '100%', textAlign: 'center', p: 3 }}>
+                  <Folder sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
+                  <Typography variant="h5" gutterBottom>文件管理</Typography>
+                  <Typography variant="body2" paragraph>
+                    上傳和管理各種文件格式
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={() => setActiveTab('documents')}
+                  >
+                    開始使用
+                  </Button>
+                </Card>
+              </Grid>
+
+              <Grid item xs={12} md={4}>
+                <Card sx={{ height: '100%', textAlign: 'center', p: 3 }}>
+                  <Info sx={{ fontSize: 60, color: 'info.main', mb: 2 }} />
+                  <Typography variant="h5" gutterBottom>系統資訊</Typography>
+                  <Typography variant="body2" paragraph>
+                    查看系統狀態和連接資訊
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="info"
+                    onClick={() => setActiveTab('info')}
+                  >
+                    開始使用
+                  </Button>
+                </Card>
+              </Grid>
             </Grid>
 
             <Box sx={{ mt: 4 }}>
@@ -1238,7 +2371,9 @@ function App() {
                   <li style={{ marginBottom: '10px' }}>選擇問答模式：AI 智能問答、網路資訊分析或綜合分析</li>
                   <li style={{ marginBottom: '10px' }}>在輸入框中輸入您的問題</li>
                   <li style={{ marginBottom: '10px' }}>點擊「發送問題」按鈕</li>
-                  <li>查看 AI 生成的回答和相關資訊</li>
+                  <li style={{ marginBottom: '10px' }}>查看 AI 生成的回答和相關資訊</li>
+                  <li style={{ marginBottom: '10px' }}>使用知識庫管理功能建立和搜索您自己的知識庫</li>
+                  <li>使用文件管理功能上傳和管理文件</li>
                 </ol>
                 <Alert severity="info" sx={{ mt: 2 }}>
                   💡 提示：
@@ -1246,6 +2381,7 @@ function App() {
                     <li>確保 Ollama 服務正在運行以獲得最佳 AI 回答體驗</li>
                     <li>網路資訊分析需要後端能連接到 DuckDuckGo 搜尋引擎</li>
                     <li>綜合分析會結合內部知識庫和網路搜尋結果</li>
+                    <li>知識庫功能需要先上傳文件並建立索引</li>
                   </ul>
                 </Alert>
               </Paper>
@@ -1259,27 +2395,9 @@ function App() {
       case 'info':
         return <SystemInfoPanel />;
       case 'documents':
-        return (
-          <Box>
-            <Typography variant="h4" gutterBottom>
-              文件管理
-            </Typography>
-            <Alert severity="info">
-              此功能正在開發中，敬請期待。
-            </Alert>
-          </Box>
-        );
+        return <DocumentManagementPanel />;
       case 'knowledge':
-        return (
-          <Box>
-            <Typography variant="h4" gutterBottom>
-              知識庫管理
-            </Typography>
-            <Alert severity="info">
-              此功能正在開發中，敬請期待。
-            </Alert>
-          </Box>
-        );
+        return <KnowledgeManagementPanel />;
       case 'api':
         return (
           <Box>
@@ -1375,7 +2493,10 @@ function App() {
                 © 2024 AI 智能問答系統 | FastAPI + React + Ollama + DuckDuckGo
               </Typography>
               <Typography variant="caption" display="block">
-                版本 1.0.0 | 支援 AI 問答與網路搜尋
+                版本 1.0.0 | 支援 AI 問答、知識庫管理與網路搜尋
+              </Typography>
+              <Typography variant="caption" display="block" sx={{ mt: 1 }}>
+                知識庫管理系統包含文件上傳、CSV導入、知識檢索和增量建置功能
               </Typography>
             </Box>
           </Grid>
