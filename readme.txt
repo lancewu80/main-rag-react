@@ -1,3 +1,21 @@
+AI智能問答系統安裝手冊
+-------------------------
+1. git clone https://github.com/lancewu80/main-rag-react.git
+
+2. 設定後端backend
+A. cmd: cd D:\project\ai\ollama\src\main-rag-react\backend
+B. run setup.bat (這個要半小時)
+
+3. 設定前端frontend
+A. cmd: cd D:\project\ai\ollama\src\main-rag-react\frontend
+B. npm install
+
+4. 跑前端及後端
+A. vs code打開目錄D:\project\ai\ollama\src\main-rag-react\
+B. 按下Control+Shift+D,選擇啟動全端開發(Python+React)
+C. 瀏覽器會自動開啟http://localhost:3000/
+
+========================
 # 建立專案資料夾
 mkdir main-rag-react
 cd main-rag-react
