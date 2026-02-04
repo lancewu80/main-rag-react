@@ -1,0 +1,115 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    // ============ 新的 Python 偵錯配置 ============
+    {
+      "name": "🐍 Python: FastAPI 後端",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload"
+      ],
+      "cwd": "${workspaceFolder}/backend",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/backend"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+
+    // ============ 舊的 Python 配置（兼容） ============
+    {
+      "name": "🐍 Python: 後端 (舊版)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "app.main",
+      "cwd": "${workspaceFolder}/backend",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/backend"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+
+    // ============ 直接執行檔案 ============
+    {
+      "name": "🐍 Python: 執行 main.py",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/app/main.py",
+      "cwd": "${workspaceFolder}/backend",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+
+    // ============ 執行簡單測試 ============
+    {
+      "name": "🐍 Python: 測試後端",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/simple_app.py",
+      "cwd": "${workspaceFolder}/backend",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+
+    // ============ Node.js 前端配置 ============
+    {
+      "name": "⚛️ React: 前端開發",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "start"],
+      "cwd": "${workspaceFolder}/frontend",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": ["<node_internals>/**"]
+    },
+
+    // ============ Chrome 偵錯配置 ============
+    {
+      "name": "🌐 Chrome: 偵錯前端",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}/frontend/src",
+      "sourceMapPathOverrides": {
+        "webpack:///src/*": "${webRoot}/*"
+      }
+    }
+  ],
+
+  // ============ 組合配置 ============
+  "compounds": [
+    {
+      "name": "🚀 全端開發 (Python + React)",
+      "configurations": [
+        "🐍 Python: FastAPI 後端",
+        "⚛️ React: 前端開發"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "🚀 全端開發 (簡單版)",
+      "configurations": [
+        "🐍 Python: 測試後端",
+        "⚛️ React: 前端開發"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "🔧 全端偵錯模式",
+      "configurations": [
+        "🐍 Python: FastAPI 後端",
+        "🌐 Chrome: 偵錯前端"
+      ],
+      "stopAll": true
+    }
+  ]
+}

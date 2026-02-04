@@ -1,0 +1,46 @@
+{
+  "recommendations": [
+    // Python 相關
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-python.black-formatter",
+    "KevinRose.vsc-python-indent",
+    
+    // React/JavaScript 相關
+    "dsznajder.es7-react-js-snippets",
+    "xabikos.JavaScriptSnippets",
+    "ecmel.vscode-html-css",
+    
+    // 前端框架
+    "burkeholland.simple-react-snippets",
+    "bradlc.vscode-tailwindcss",
+    
+    // 工具和格式
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    "streetsidesoftware.code-spell-checker",
+    "usernamehw.errorlens",
+    
+    // Git
+    "eamodio.gitlens",
+    "mhutchie.git-graph",
+    
+    // 視覺化
+    "pkief.material-icon-theme",
+    "zhuangtongfa.material-theme",
+    
+    // 其他實用工具
+    "ritwickdey.LiveServer",
+    "ms-vscode.live-server",
+    "oderwat.indent-rainbow",
+    "christian-kohler.path-intellisense",
+    "VisualStudioExptTeam.vscodeintellicode",
+    
+    // Docker（可選）
+    "ms-azuretools.vscode-docker",
+    
+    // 資料庫（可選）
+    "mtxr.sqltools",
+    "mtxr.sqltools-driver-pg"
+  ]
+}

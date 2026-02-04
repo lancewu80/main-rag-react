@@ -1,0 +1,123 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "安裝後端依賴",
+      "type": "shell",
+      "command": "cd backend && python -m pip install -r requirements.txt",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "安裝前端依賴",
+      "type": "shell",
+      "command": "cd frontend && npm install",
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "安裝依賴",
+      "dependsOrder": "parallel",
+      "dependsOn": ["安裝後端依賴", "安裝前端依賴"],
+      "group": "build"
+    },
+    {
+      "label": "啟動後端伺服器",
+      "type": "shell",
+      "command": "cd backend && python -m app.main",
+      "group": "none",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": {
+        "pattern": [
+          {
+            "regexp": ".",
+            "file": 1,
+            "location": 2,
+            "message": 3
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*Application startup complete.*",
+          "endsPattern": ".*Shutting down.*"
+        }
+      }
+    },
+    {
+      "label": "啟動前端開發伺服器",
+      "type": "shell",
+      "command": "cd frontend && npm start",
+      "group": "none",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": {
+        "pattern": [
+          {
+            "regexp": ".",
+            "file": 1,
+            "location": 2,
+            "message": 3
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*Compiled successfully.*",
+          "endsPattern": ".*Failed to compile.*"
+        }
+      }
+    },
+    {
+      "label": "🚀 啟動全端應用",
+      "dependsOrder": "parallel",
+      "dependsOn": ["啟動後端伺服器", "啟動前端開發伺服器"],
+      "group": "none"
+    },
+    {
+      "label": "建立前端生產版本",
+      "type": "shell",
+      "command": "cd frontend && npm run build",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "啟動 Python 虛擬環境",
+      "type": "shell",
+      "command": "cd backend && python -m venv venv",
+      "windows": {
+        "command": "cd backend && python -m venv venv"
+      },
+      "linux": {
+        "command": "cd backend && python3 -m venv venv"
+      },
+      "osx": {
+        "command": "cd backend && python3 -m venv venv"
+      },
+      "group": "build",
+      "presentation": {
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "初始化專案",
+      "dependsOrder": "sequence",
+      "dependsOn": ["啟動 Python 虛擬環境", "安裝依賴"],
+      "group": "build",
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "40台中商業銀行.pdf": {
+    "hash": "16fab18682cb326ac2dbc88c82ea2e59",
+    "mtime": 1768550365.0244973,
+    "last_processed": "2026-01-16T17:08:21.398804",
+    "path": "./docs\\40台中商業銀行.pdf",
+    "size": 58058
+  },
+  "AnnualReport2023.pdf": {
+    "hash": "e273f483c378dacc83b691fba7cdf288",
+    "mtime": 1768550662.6495829,
+    "last_processed": "2026-01-16T17:08:21.419810",
+    "path": "./docs\\AnnualReport2023.pdf",
+    "size": 12966551
+  },
+  "DepositAccount.pdf": {
+    "hash": "e3208f6f0f7d7bc9d50c422b22f52b03",
+    "mtime": 1768548529.5288956,
+    "last_processed": "2026-01-16T17:08:21.420816",
+    "path": "./docs\\DepositAccount.pdf",
+    "size": 435901
+  },
+  "ManualATM.pdf": {
+    "hash": "e25ee845c92ff537621788b4a637986e",
+    "mtime": 1768548496.434035,
+    "last_processed": "2026-01-16T17:08:21.451496",
+    "path": "./docs\\ManualATM.pdf",
+    "size": 22181572
+  },
+  "PRTM03(11201).pdf": {
+    "hash": "e11099f82a6dfbec7276ef7ddadca056",
+    "mtime": 1768548503.8744757,
+    "last_processed": "2026-01-16T17:08:21.452499",
+    "path": "./docs\\PRTM03(11201).pdf",
+    "size": 130419
+  }
+}

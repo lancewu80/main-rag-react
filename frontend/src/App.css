@@ -1,0 +1,47 @@
+.App {
+  text-align: center;
+}
+
+/* 確保內容區域正確顯示 */
+.MuiContainer-root {
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+/* 主內容區域 */
+.MuiPaper-root {
+  transition: all 0.3s ease;
+}
+
+/* 確保網格系統正確工作 */
+.MuiGrid-container {
+  width: 100% !important;
+  margin-left: 0 !important;
+}
+
+/* 響應式調整 */
+@media (max-width: 900px) {
+  .MuiGrid-item {
+    width: 100% !important;
+  }
+}
+
+/* 自定義捲軸 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
