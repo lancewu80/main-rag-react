@@ -13,6 +13,25 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import TextLoader, PyPDFLoader
 from langchain_community.tools import DuckDuckGoSearchRun
 
+import ctypes
+import os
+import time
+import json
+
+# --- C 函式庫初始化 ---
+# 取得目前檔案的絕對路徑，並指向 ../c/io_writer.dll
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+DLL_PATH = os.path.join(os.path.dirname(CURRENT_DIR), "c", "io_writer.dll")
+
+try:
+    c_lib = ctypes.CDLL(DLL_PATH)
+    c_lib.fast_write.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+    c_lib.fast_write.restype = ctypes.c_double
+    print(f"✅ 成功載入 C 擴展: {DLL_PATH}")
+except Exception as e:
+    print(f"❌ 無法載入 C 擴展: {e}")
+    c_lib = None
+
 router = APIRouter()
 
 # ============ 安全處理函數 ============
@@ -504,6 +523,59 @@ async def hybrid_qa_internal(question: str) -> QuestionResponse:
         # 檢查是否有可用的結果
         rag_has_content = rag_results["status"] == "success" and len(rag_results["results"]) > 0
         web_has_content = web_results["status"] == "success" and len(web_results["results"]) > 0
+
+# 準備要寫入的數據
+        log_data = json.dumps({
+            "question": question,
+            "rag": rag_results,
+            "web": web_results,
+            "timestamp": datetime.now().isoformat()
+        }, ensure_ascii=False)
+        data_bytes = log_data.encode('utf-8')
+
+        # 1. Python 寫入測試
+        py_start = time.perf_counter()
+        with open("perf_python.json", "w", encoding="utf-8") as f:
+            f.write(log_data*10000)
+        py_duration = time.perf_counter() - py_start
+
+# --- 2. C 寫入測試 (修正變數範圍問題) ---
+# 修正後的 C 寫入測試
+        c_duration = -1.0
+        filename = "perf_c.json"
+        target_path = os.path.join(BASE_DIR, filename)
+        abs_target_path = os.path.normpath(os.path.abspath(target_path))
+
+        if c_lib:
+            try:
+                # 💡 嘗試將路徑轉為 Windows 系統原生編碼 (重要！)
+                # 如果 utf-8 會報 Errno 22 (無效參數)，請改用 'mbcs'
+                try:
+                    c_path_bytes = abs_target_path.encode('mbcs')
+                except:
+                    c_path_bytes = abs_target_path.encode('utf-8')
+
+                # 確保 data_bytes 也是正確的 bytes
+                if isinstance(log_data, str):
+                    data_bytes = (log_data*10000).encode('utf-8')
+                else:
+                    data_bytes = log_data*10000
+
+                c_duration = c_lib.fast_write(c_path_bytes, data_bytes)
+            except Exception as e:
+                print(f"❌ 呼叫 C DLL 時發生異常: {e}")
+
+        # --- 3. 顯示結果 ---
+        print(f"--- I/O Performance Analysis ---")
+        print(f"Target Path:  {abs_target_path}")
+        print(f"Python Write: {py_duration:.6f} s")
+        print(f"C Write:      {c_duration:.6f} s")
+
+        if c_duration == -1.0:
+            print(f"❌ 錯誤提示: C 語言無法開啟檔案。原因可能是權限不足、路徑錯誤或 DLL 載入失敗。")
+        elif c_duration > 0:
+            print(f"Speedup:      {py_duration / (c_duration if c_duration > 0 else 0.000001):.2f}x")
+        print(f"--------------------------------")
 
         # 構建整合的上下文
         context_parts = []
