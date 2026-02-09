@@ -2251,12 +2251,12 @@ function App() {
         return (
           <Box>
             <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', mb: 4 }}>
-              🎯 AI 智能問答系統
+              🎯 AI 智能知識庫系統
             </Typography>
 
             <Alert severity={systemStatus === 'connected' ? 'success' : 'warning'} sx={{ mb: 3 }}>
               {systemStatus === 'connected'
-                ? '✅ 後端 API 連接正常，可以開始使用 AI 問答功能'
+                ? '✅ 後端 API 連接正常，可以開始使用 AI 知識庫問答功能'
                 : '⚠️  後端 API 未連接，請確保後端服務正在運行'}
             </Alert>
 
@@ -2440,7 +2440,7 @@ function App() {
           <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
             <SmartToy sx={{ mr: 2 }} />
             <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-              AI 智能問答系統
+              AI 智能知識庫系統
             </Typography>
             <Chip
               label="Ollama 驅動"
@@ -2490,7 +2490,7 @@ function App() {
             {/* 頁腳 */}
             <Box sx={{ mt: 4, textAlign: 'center', color: 'text.secondary' }}>
               <Typography variant="body2">
-                © 2024 AI 智能問答系統 | FastAPI + React + Ollama + DuckDuckGo
+                © 2024 AI 智能知識庫系統 | FastAPI + React + Ollama + DuckDuckGo
               </Typography>
               <Typography variant="caption" display="block">
                 版本 1.0.0 | 支援 AI 問答、知識庫管理與網路搜尋
