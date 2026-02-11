@@ -18,6 +18,43 @@ import os
 import time
 import json
 
+from typing import Optional, Tuple
+
+import torch
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+# 加載 PyTorch 模型
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"🚀 PyTorch 正在使用設備: {device}")
+rerank_model_name = "BAAI/bge-reranker-base"
+rerank_tokenizer = AutoTokenizer.from_pretrained(rerank_model_name)
+rerank_model = AutoModelForSequenceClassification.from_pretrained(rerank_model_name)
+rerank_model.eval() # 設定為推論模式
+
+def torch_rerank(query, documents, top_n=3):
+    if not documents:
+        return []
+
+    # 確保模型在正確的設備 (GPU/CPU)
+    rerank_model.to(device)
+
+    pairs = [[query, doc.page_content] for doc in documents]
+
+    with torch.no_grad():
+        # 將數據移至設備
+        inputs = rerank_tokenizer(pairs, padding=True, truncation=True, return_tensors='pt', max_length=512).to(device)
+
+        # 模型推論
+        logits = rerank_model(**inputs).logits
+        scores = logits.view(-1,).float()
+
+        # 排序並取出前 top_n 名
+        scored_pairs = zip(scores.cpu().tolist(), documents)
+        sorted_docs = sorted(scored_pairs, key=lambda x: x[0], reverse=True)
+
+        # 這裡會用到傳入的 top_n
+        return [doc for score, doc in sorted_docs[:top_n]]
+
 # --- C 函式庫初始化 ---
 # 取得目前檔案的絕對路徑，並指向 ../c/io_writer.dll
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -179,12 +216,16 @@ def get_preferred_model():
 
 PREFERRED_MODEL = get_preferred_model()
 
-async def call_ollama_api(prompt: str, model: str = None) -> str:
+async def call_ollama_api(
+    prompt: str,
+    model: Optional[str] = None
+) -> Tuple[str, float]:
     """調用 Ollama API 生成回答"""
-    if not OLLAMA_AVAILABLE or not PREFERRED_MODEL:
-        return "⚠️ Ollama 服務未連接，請確保 Ollama 正在運行。"
 
-    model_to_use = model or PREFERRED_MODEL
+    if not OLLAMA_AVAILABLE or not PREFERRED_MODEL:
+        return "⚠️ Ollama 服務未連接，請確保 Ollama 正在運行。", 0.0
+
+    model_to_use: str = model or PREFERRED_MODEL
 
     try:
         payload = {
@@ -211,7 +252,6 @@ async def call_ollama_api(prompt: str, model: str = None) -> str:
 
             answer = result.get("response", "").strip()
 
-            # 清理回答
             if answer.startswith("。"):
                 answer = answer[1:]
             if answer.startswith("，"):
@@ -220,12 +260,13 @@ async def call_ollama_api(prompt: str, model: str = None) -> str:
             print(f"✅ Ollama 回答生成成功，耗時: {processing_time:.2f}秒")
             return answer, processing_time
         else:
-            return f"❌ Ollama API 錯誤: {response.status_code}", 0
+            return f"❌ Ollama API 錯誤: {response.status_code}", 0.0
 
     except requests.exceptions.Timeout:
-        return "❌ Ollama 請求超時，請稍後再試。", 0
+        return "❌ Ollama 請求超時，請稍後再試。", 0.0
     except Exception as e:
-        return f"❌ Ollama 調用失敗: {str(e)}", 0
+        return f"❌ Ollama 調用失敗: {str(e)}", 0.0
+
 
 # DuckDuckGo 搜尋函數
 async def search_duckduckgo(query: str, max_results: int = 5) -> Dict[str, Any]:
@@ -328,14 +369,14 @@ async def search_rag(query: str, k: int = 4) -> Dict[str, Any]:
             "query": query
         }
 
-# RAG 問答
+# RAG 問答 (已整合 PyTorch Rerank 優化版)
 async def rag_qa_internal(question: str) -> QuestionResponse:
-    """執行 RAG 問答流程"""
+    """執行 RAG 問答流程，並透過 PyTorch 進行重排優化"""
     try:
         start_time = datetime.now()
 
-        # 檢索相關文檔
-        rag_results = await search_rag(question, k=4)
+        # 1. 初始檢索：擴大範圍至 k=10，讓 Reranker 有挑選空間
+        rag_results = await search_rag(question, k=10)
 
         if rag_results["status"] == "error":
             raise Exception(rag_results["message"])
@@ -351,12 +392,26 @@ async def rag_qa_internal(question: str) -> QuestionResponse:
                 }
             )
 
-        # 構建上下文
-        context = "【本地知識庫資訊】\n\n"
-        for result in rag_results["results"]:
-            context += f"來源: {result['source']}\n"
-            context += f"相關性: {result['relevance']:.2f}\n"
-            context += f"內容: {result['content']}\n\n"
+        # 2. PyTorch 重排邏輯
+        # 將 search_rag 的結果轉換為 torch_rerank 需要的 Document 格式物件
+        class SimpleDoc:
+            def __init__(self, content, metadata):
+                self.page_content = content
+                self.metadata = metadata
+
+        initial_docs = [SimpleDoc(r['content'], {'source': r['source'], 'relevance': r['relevance']}) for r in rag_results["results"]]
+
+        # 調用您定義的 PyTorch Rerank 函數 (取出分數最高的前 4 名)
+        # [註] 此處會使用您剛寫好的 torch_rerank，且內部已處理 sorted_docs 定義問題
+        rerank_start = time.time()
+        final_docs = torch_rerank(question, initial_docs, top_n=4)
+        rerank_time = time.time() - rerank_start
+
+        # 3. 構建上下文 (使用重排後的精選內容)
+        context = "【本地知識庫資訊 (已通過 PyTorch Rerank 優化)】\n\n"
+        for i, doc in enumerate(final_docs):
+            context += f"來源: {doc.metadata['source']}\n"
+            context += f"內容: {doc.page_content}\n\n"
 
         # 生成提示詞
         prompt = f"""請根據以下本地知識庫資訊回答問題：
@@ -376,17 +431,17 @@ async def rag_qa_internal(question: str) -> QuestionResponse:
 回答："""
 
         # 調用 Ollama 生成回答
-        print("🤖 正在生成回答...")
+        print(f"🤖 正在生成回答 (模型: {PREFERRED_MODEL})...")
         answer, llm_time = await call_ollama_api(prompt)
 
-        # 準備來源資訊
+        # 準備來源資訊 (反映重排後的順序)
         sources = []
-        for result in rag_results["results"]:
+        for doc in final_docs:
             sources.append({
-                "source": f"本地知識庫: {result['source']}",
-                "relevance": result["relevance"],
+                "source": f"本地知識庫: {doc.metadata['source']}",
+                "relevance": "High (Reranked)",
                 "type": "rag",
-                "content_preview": result["content"][:100]
+                "content_preview": doc.page_content[:100]
             })
 
         total_time = (datetime.now() - start_time).total_seconds()
@@ -395,12 +450,14 @@ async def rag_qa_internal(question: str) -> QuestionResponse:
             answer=answer,
             sources=sources,
             metadata={
-                "type": "rag",
+                "type": "rag_reranked",
                 "model_used": PREFERRED_MODEL or "unknown",
                 "ollama_available": OLLAMA_AVAILABLE,
                 "processing_time": round(total_time, 2),
                 "llm_time": round(llm_time, 2) if llm_time else 0,
-                "results_count": len(rag_results["results"])
+                "rerank_time": round(rerank_time, 4),
+                "results_count": len(final_docs),
+                "device": str(device) # 顯示是用 CPU 還是 CUDA
             }
         )
 
