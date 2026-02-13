@@ -15,6 +15,10 @@ A. vs code打開目錄D:\project\ai\ollama\src\main-rag-react\
 B. 按下Control+Shift+D,選擇啟動全端開發(Python+React)
 C. 瀏覽器會自動開啟http://localhost:3000/
 
+
+curl http://localhost:8000/api/knowledge/status
+pip install chromadb --upgrade
+
 ========================
 # 建立專案資料夾
 mkdir main-rag-react
@@ -47,7 +51,8 @@ source venv/bin/activate
 # 安裝依賴
 pip install fastapi uvicorn python-multipart langchain langchain-community chromadb sentence-transformers pydantic duckduckgo-search requests pypdf
 
-
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+pip install transformers
 =====================
 啟動後端伺服器
 
